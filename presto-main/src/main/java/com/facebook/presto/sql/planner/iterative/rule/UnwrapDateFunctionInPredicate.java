@@ -44,7 +44,8 @@ import static java.util.Objects.requireNonNull;
  *   timestamp_column <  TIMESTAMP '2020-10-11 00:00:00.000'
  */
 public class UnwrapDateFunctionInPredicate
-        implements Rule<FilterNode> {
+        implements Rule<FilterNode>
+{
     private static final String DATE_FUNCTION = "date";
     private static final String YEAR_FUNCTION = "year";
     private static final String DATE_TRUNC_FUNCTION = "date_trunc";
@@ -52,18 +53,21 @@ public class UnwrapDateFunctionInPredicate
     private final FunctionAndTypeManager functionAndTypeManager;
     private final StandardFunctionResolution functionResolution;
 
-    public UnwrapDateFunctionInPredicate(FunctionAndTypeManager functionAndTypeManager) {
+    public UnwrapDateFunctionInPredicate(FunctionAndTypeManager functionAndTypeManager)
+    {
         this.functionAndTypeManager = requireNonNull(functionAndTypeManager, "functionAndTypeManager is null");
         this.functionResolution = new FunctionResolution(functionAndTypeManager.getFunctionAndTypeResolver());
     }
 
     @Override
-    public Pattern<FilterNode> getPattern() {
+    public Pattern<FilterNode> getPattern()
+    {
         return typeOf(FilterNode.class);
     }
 
     @Override
-    public Result apply(FilterNode node, Captures captures, Context context) {
+    public Result apply(FilterNode node, Captures captures, Context context)
+    {
         RowExpression predicate = node.getPredicate();
         Optional<RowExpression> rewritten = rewritePredicate(predicate);
 
@@ -79,7 +83,8 @@ public class UnwrapDateFunctionInPredicate
                         rewritten.get()));
     }
 
-    private Optional<RowExpression> rewritePredicate(RowExpression expression) {
+    private Optional<RowExpression> rewritePredicate(RowExpression expression)
+    {
         if (!(expression instanceof CallExpression)) {
             return Optional.empty();
         }
@@ -104,7 +109,8 @@ public class UnwrapDateFunctionInPredicate
         return tryRewriteFunctionEqualsLiteral(right, left);
     }
 
-    private Optional<RowExpression> tryRewriteFunctionEqualsLiteral(RowExpression functionSide, RowExpression literalSide) {
+    private Optional<RowExpression> tryRewriteFunctionEqualsLiteral(RowExpression functionSide, RowExpression literalSide)
+    {
         if (!(functionSide instanceof CallExpression) || !(literalSide instanceof ConstantExpression)) {
             return Optional.empty();
         }
@@ -117,16 +123,19 @@ public class UnwrapDateFunctionInPredicate
 
         if (functionName.equalsIgnoreCase(DATE_FUNCTION)) {
             return rewriteDateFunction(function, literal);
-        } else if (functionName.equalsIgnoreCase(YEAR_FUNCTION)) {
+        }
+        else if (functionName.equalsIgnoreCase(YEAR_FUNCTION)) {
             return rewriteYearFunction(function, literal);
-        } else if (functionName.equalsIgnoreCase(DATE_TRUNC_FUNCTION)) {
+        }
+        else if (functionName.equalsIgnoreCase(DATE_TRUNC_FUNCTION)) {
             return rewriteDateTruncFunction(function, literal);
         }
 
         return Optional.empty();
     }
 
-    private Optional<RowExpression> rewriteDateFunction(CallExpression function, ConstantExpression literal) {
+    private Optional<RowExpression> rewriteDateFunction(CallExpression function, ConstantExpression literal)
+    {
         // Ensure this is date(column) = DATE '...'
         if (function.getArguments().size() != 1 || !(literal.getType() instanceof DateType)) {
             return Optional.empty();
@@ -147,7 +156,8 @@ public class UnwrapDateFunctionInPredicate
         return Optional.of(createTimestampRangePredicate(column, lowerBound, upperBound));
     }
 
-    private Optional<RowExpression> rewriteYearFunction(CallExpression function, ConstantExpression literal) {
+    private Optional<RowExpression> rewriteYearFunction(CallExpression function, ConstantExpression literal)
+    {
         // Ensure this is year(column) = 2020 (or similar)
         if (function.getArguments().size() != 1 || !(literal.getValue() instanceof Long)) {
             return Optional.empty();
@@ -168,7 +178,8 @@ public class UnwrapDateFunctionInPredicate
         return Optional.of(createTimestampRangePredicate(column, lowerBound, upperBound));
     }
 
-    private Optional<RowExpression> rewriteDateTruncFunction(CallExpression function, ConstantExpression literal) {
+    private Optional<RowExpression> rewriteDateTruncFunction(CallExpression function, ConstantExpression literal)
+    {
         // Ensure this is date_trunc('unit', column) = TIMESTAMP '...'
         if (function.getArguments().size() != 2 || !(literal.getType() instanceof TimestampType)) {
             return Optional.empty();
@@ -221,4 +232,41 @@ public class UnwrapDateFunctionInPredicate
         return Optional.of(createTimestampRangePredicate(column, lowerBound, upperBound));
     }
 
+    private RowExpression createTimestampRangePredicate(
+            RowExpression column,
+            LocalDateTime lowerBound,
+            LocalDateTime upperBound)
+    {
+        FunctionResolution functionResolution = new FunctionResolution(functionAndTypeResolver);
+
+        // Create timestamp literals for bounds
+        ConstantExpression lowerLiteral = new ConstantExpression(
+                lowerBound,
+                TIMESTAMP);
+        ConstantExpression upperLiteral = new ConstantExpression(
+                upperBound,
+                TIMESTAMP);
+
+        // Create comparisons: column >= lowerBound AND column < upperBound
+        CallExpression lowerBoundComparison = new CallExpression(
+                column.getSourceLocation(),
+                "GREATER_THAN_OR_EQUAL",
+                functionResolution.comparisonFunction(OperatorType.GREATER_THAN_OR_EQUAL, column.getType(), lowerLiteral.getType()),
+                BOOLEAN,
+                ImmutableList.of(column, lowerLiteral));
+
+        CallExpression upperBoundComparison = new CallExpression(
+                column.getSourceLocation(),
+                "LESS_THAN",
+                functionResolution.comparisonFunction(OperatorType.LESS_THAN, column.getType(), upperLiteral.getType()),
+                BOOLEAN,
+                ImmutableList.of(column, upperLiteral));
+
+        // Combine with AND
+        return new SpecialFormExpression(
+                column.getSourceLocation(),
+                AND,
+                BOOLEAN,
+                ImmutableList.of(lowerBoundComparison, upperBoundComparison));
+    }
 }
