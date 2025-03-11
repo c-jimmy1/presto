@@ -2,14 +2,11 @@ package com.facebook.presto.sql.planner.iterative.rule;
 
 import com.facebook.presto.common.type.DateType;
 import com.facebook.presto.common.type.TimestampType;
-import com.facebook.presto.common.type.Type;
-import com.facebook.presto.matching.Capture;
 import com.facebook.presto.matching.Captures;
 import com.facebook.presto.matching.Pattern;
 import com.facebook.presto.metadata.FunctionAndTypeManager;
 import com.facebook.presto.spi.function.StandardFunctionResolution;
 import com.facebook.presto.spi.plan.FilterNode;
-import com.facebook.presto.spi.plan.PlanNode;
 import com.facebook.presto.spi.relation.CallExpression;
 import com.facebook.presto.spi.relation.ConstantExpression;
 import com.facebook.presto.spi.relation.InputReferenceExpression;
@@ -18,8 +15,6 @@ import com.facebook.presto.spi.relation.SpecialFormExpression;
 import com.facebook.presto.spi.relation.VariableReferenceExpression;
 import com.facebook.presto.sql.planner.iterative.Rule;
 import com.facebook.presto.sql.relational.FunctionResolution;
-import com.facebook.presto.sql.relational.RowExpressionDeterminismEvaluator;
-import com.facebook.presto.sql.analyzer.FunctionAndTypeResolver;
 import com.facebook.presto.common.function.OperatorType;
 import com.google.common.collect.ImmutableList;
 
@@ -30,7 +25,6 @@ import java.util.Optional;
 
 import static com.facebook.presto.matching.Pattern.typeOf;
 import static com.facebook.presto.spi.relation.SpecialFormExpression.Form.AND;
-import static com.facebook.presto.common.type.DateType.DATE;
 import static com.facebook.presto.common.type.TimestampType.TIMESTAMP;
 import static com.facebook.presto.common.type.BooleanType.BOOLEAN;
 import static java.util.Objects.requireNonNull;
@@ -71,16 +65,13 @@ public class UnwrapDateFunctionInPredicate
         RowExpression predicate = node.getPredicate();
         Optional<RowExpression> rewritten = rewritePredicate(predicate);
 
-        if (!rewritten.isPresent()) {
-            return Result.empty();
-        }
-
-        return Result.ofPlanNode(
+        return rewritten.map(rowExpression -> Result.ofPlanNode(
                 new FilterNode(
                         node.getSourceLocation(),
                         node.getId(),
                         node.getSource(),
-                        rewritten.get()));
+                        rowExpression))).orElseGet(Result::empty);
+
     }
 
     private Optional<RowExpression> rewritePredicate(RowExpression expression)
@@ -90,8 +81,6 @@ public class UnwrapDateFunctionInPredicate
         }
 
         CallExpression call = (CallExpression) expression;
-        FunctionResolution functionResolution = new FunctionResolution(StandardFunctionResolution);
-
         // Check if this is an equality comparison
         if (!functionResolution.isEqualsFunction(call.getFunctionHandle())) {
             return Optional.empty();
@@ -206,7 +195,6 @@ public class UnwrapDateFunctionInPredicate
         LocalDateTime timestamp = (LocalDateTime) literal.getValue();
 
         // Calculate bounds based on truncation unit
-        LocalDateTime lowerBound = timestamp;
         LocalDateTime upperBound;
 
         switch (unit.toLowerCase()) {
@@ -229,7 +217,7 @@ public class UnwrapDateFunctionInPredicate
                 return Optional.empty(); // Unsupported truncation unit
         }
 
-        return Optional.of(createTimestampRangePredicate(column, lowerBound, upperBound));
+        return Optional.of(createTimestampRangePredicate(column, timestamp, upperBound));
     }
 
     private RowExpression createTimestampRangePredicate(
@@ -237,8 +225,6 @@ public class UnwrapDateFunctionInPredicate
             LocalDateTime lowerBound,
             LocalDateTime upperBound)
     {
-        FunctionResolution functionResolution = new FunctionResolution(functionAndTypeResolver);
-
         // Create timestamp literals for bounds
         ConstantExpression lowerLiteral = new ConstantExpression(
                 lowerBound,

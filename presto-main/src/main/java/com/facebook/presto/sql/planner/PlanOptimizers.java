@@ -304,9 +304,8 @@ public class PlanOptimizers
                                         new MergeLimitWithDistinct(),
                                         new PruneCountAggregationOverScalar(metadata.getFunctionAndTypeManager()),
                                         new PruneOrderByInAggregation(metadata.getFunctionAndTypeManager()),
-                                        new RewriteSpatialPartitioningAggregation(metadata))),
-                                        new UnwrapDateFunctionInPredicate(metadata.getFunctionAndTypeManager())
-
+                                        new UnwrapDateFunctionInPredicate(metadata.getFunctionAndTypeManager()),
+                                        new RewriteSpatialPartitioningAggregation(metadata)))
                                 .build()),
                 new IterativeOptimizer(
                         metadata,
@@ -315,7 +314,9 @@ public class PlanOptimizers
                         estimatedExchangesCostCalculator,
                         ImmutableSet.of(
                                 new ImplementBernoulliSampleAsFilter(metadata.getFunctionAndTypeManager()),
-                                new ImplementOffset(metadata.getFunctionAndTypeManager()))),
+                                new UnwrapDateFunctionInPredicate(metadata.getFunctionAndTypeManager()),
+
+        new ImplementOffset(metadata.getFunctionAndTypeManager()))),
                 simplifyRowExpressionOptimizer,
                 new IterativeOptimizer(
                         metadata,
