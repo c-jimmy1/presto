@@ -63,7 +63,15 @@ public class UnwrapDateFunctionInPredicate
     public Result apply(FilterNode node, Captures captures, Context context)
     {
         RowExpression predicate = node.getPredicate();
+        System.out.println("Original Predicate: " + predicate);
+
         Optional<RowExpression> rewritten = rewritePredicate(predicate);
+
+        if (rewritten.isPresent()) {
+            System.out.println("Rewritten Predicate: " + rewritten.get());
+        } else {
+            System.out.println("No transformation applied.");
+        }
 
         return rewritten.map(rowExpression -> Result.ofPlanNode(
                 new FilterNode(
@@ -113,12 +121,6 @@ public class UnwrapDateFunctionInPredicate
         if (functionName.equalsIgnoreCase(DATE_FUNCTION)) {
             return rewriteDateFunction(function, literal);
         }
-        else if (functionName.equalsIgnoreCase(YEAR_FUNCTION)) {
-            return rewriteYearFunction(function, literal);
-        }
-        else if (functionName.equalsIgnoreCase(DATE_TRUNC_FUNCTION)) {
-            return rewriteDateTruncFunction(function, literal);
-        }
 
         return Optional.empty();
     }
@@ -131,108 +133,38 @@ public class UnwrapDateFunctionInPredicate
         }
 
         RowExpression column = function.getArguments().get(0);
+
+        // **Fix: Unwrap CAST if present**
+        if (column instanceof CallExpression) {
+            CallExpression castExpression = (CallExpression) column;
+            if (castExpression.getDisplayName().equalsIgnoreCase("CAST") && castExpression.getArguments().size() == 1) {
+                column = castExpression.getArguments().get(0); // Extract the original column
+            }
+        }
+
+        // Ensure column is a valid reference
         if (!(column instanceof VariableReferenceExpression || column instanceof InputReferenceExpression)) {
             return Optional.empty();
         }
 
-        // Extract date from literal
+        // Extract date from literal and convert it to LocalDateTime
         LocalDate date = (LocalDate) literal.getValue();
+        LocalDateTime lowerBound = date.atStartOfDay(); // Convert DATE -> TIMESTAMP
+        LocalDateTime upperBound = lowerBound.plusDays(1);
 
-        // Create timestamp bounds for the entire day
-        LocalDateTime lowerBound = date.atStartOfDay();
-        LocalDateTime upperBound = date.plusDays(1).atStartOfDay();
+        // Convert literal to TIMESTAMP type for comparison
+        ConstantExpression lowerTimestampLiteral = new ConstantExpression(lowerBound, TIMESTAMP);
+        ConstantExpression upperTimestampLiteral = new ConstantExpression(upperBound, TIMESTAMP);
 
-        return Optional.of(createTimestampRangePredicate(column, lowerBound, upperBound));
+        return Optional.of(createTimestampRangePredicate(column, lowerTimestampLiteral, upperTimestampLiteral));
     }
 
-    private Optional<RowExpression> rewriteYearFunction(CallExpression function, ConstantExpression literal)
-    {
-        // Ensure this is year(column) = 2020 (or similar)
-        if (function.getArguments().size() != 1 || !(literal.getValue() instanceof Long)) {
-            return Optional.empty();
-        }
-
-        RowExpression column = function.getArguments().get(0);
-        if (!(column instanceof VariableReferenceExpression || column instanceof InputReferenceExpression)) {
-            return Optional.empty();
-        }
-
-        // Extract year from literal
-        long year = (Long) literal.getValue();
-
-        // Create timestamp bounds for the entire year
-        LocalDateTime lowerBound = LocalDateTime.of((int) year, 1, 1, 0, 0);
-        LocalDateTime upperBound = LocalDateTime.of((int) year + 1, 1, 1, 0, 0);
-
-        return Optional.of(createTimestampRangePredicate(column, lowerBound, upperBound));
-    }
-
-    private Optional<RowExpression> rewriteDateTruncFunction(CallExpression function, ConstantExpression literal)
-    {
-        // Ensure this is date_trunc('unit', column) = TIMESTAMP '...'
-        if (function.getArguments().size() != 2 || !(literal.getType() instanceof TimestampType)) {
-            return Optional.empty();
-        }
-
-        // First argument should be the truncation unit (as a constant)
-        if (!(function.getArguments().get(0) instanceof ConstantExpression)) {
-            return Optional.empty();
-        }
-
-        ConstantExpression unitLiteral = (ConstantExpression) function.getArguments().get(0);
-        if (!(unitLiteral.getValue() instanceof String)) {
-            return Optional.empty();
-        }
-
-        String unit = (String) unitLiteral.getValue();
-        RowExpression column = function.getArguments().get(1);
-
-        if (!(column instanceof VariableReferenceExpression || column instanceof InputReferenceExpression)) {
-            return Optional.empty();
-        }
-
-        // Extract timestamp from literal
-        LocalDateTime timestamp = (LocalDateTime) literal.getValue();
-
-        // Calculate bounds based on truncation unit
-        LocalDateTime upperBound;
-
-        switch (unit.toLowerCase()) {
-            case "year":
-                upperBound = timestamp.with(TemporalAdjusters.firstDayOfNextYear());
-                break;
-            case "month":
-                upperBound = timestamp.with(TemporalAdjusters.firstDayOfNextMonth());
-                break;
-            case "day":
-                upperBound = timestamp.plusDays(1);
-                break;
-            case "hour":
-                upperBound = timestamp.plusHours(1);
-                break;
-            case "minute":
-                upperBound = timestamp.plusMinutes(1);
-                break;
-            default:
-                return Optional.empty(); // Unsupported truncation unit
-        }
-
-        return Optional.of(createTimestampRangePredicate(column, timestamp, upperBound));
-    }
 
     private RowExpression createTimestampRangePredicate(
             RowExpression column,
-            LocalDateTime lowerBound,
-            LocalDateTime upperBound)
+            ConstantExpression lowerLiteral,
+            ConstantExpression upperLiteral)
     {
-        // Create timestamp literals for bounds
-        ConstantExpression lowerLiteral = new ConstantExpression(
-                lowerBound,
-                TIMESTAMP);
-        ConstantExpression upperLiteral = new ConstantExpression(
-                upperBound,
-                TIMESTAMP);
-
         // Create comparisons: column >= lowerBound AND column < upperBound
         CallExpression lowerBoundComparison = new CallExpression(
                 column.getSourceLocation(),
@@ -255,4 +187,5 @@ public class UnwrapDateFunctionInPredicate
                 BOOLEAN,
                 ImmutableList.of(lowerBoundComparison, upperBoundComparison));
     }
+
 }
