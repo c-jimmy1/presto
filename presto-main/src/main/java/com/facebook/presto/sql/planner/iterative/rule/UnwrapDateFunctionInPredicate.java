@@ -27,12 +27,11 @@ import static com.facebook.presto.common.type.BooleanType.BOOLEAN;
 import static java.util.Objects.requireNonNull;
 
 /**
- * A rule that rewrites function-based date predicates into range predicates.
- * For example, it rewrites:
- *   date(timestamp_column) = DATE '2020-10-10'
+ * This rule rewrites predicates of the form:
+ *    date(timestamp_column) = DATE 'YYYY-MM-DD'
  * into:
- *   timestamp_column >= TIMESTAMP '2020-10-10 00:00:00.000' AND
- *   timestamp_column <  TIMESTAMP '2020-10-11 00:00:00.000'
+ *    timestamp_column >= TIMESTAMP 'YYYY-MM-DD 00:00:00.000'
+ * AND timestamp_column < TIMESTAMP 'YYYY-MM-DD+1 00:00:00.000'
  */
 public class UnwrapDateFunctionInPredicate
         implements Rule<FilterNode>
@@ -91,7 +90,7 @@ public class UnwrapDateFunctionInPredicate
         RowExpression left = call.getArguments().get(0);
         RowExpression right = call.getArguments().get(1);
 
-        // Try both function(column) = literal and literal = function(column)
+        // Try both: function(column) = literal and literal = function(column)
         Optional<RowExpression> rewritten = tryRewriteFunctionEqualsLiteral(left, right);
         if (rewritten.isPresent()) {
             return rewritten;
@@ -121,7 +120,6 @@ public class UnwrapDateFunctionInPredicate
         ConstantExpression literal = (ConstantExpression) literalSide;
 
         String functionName = function.getDisplayName();
-
         if (functionName.equalsIgnoreCase(DATE_FUNCTION)) {
             return rewriteDateFunction(function, literal);
         }
@@ -136,7 +134,7 @@ public class UnwrapDateFunctionInPredicate
         System.out.println("Literal: " + literal + " (" + literal.getClass().getName() + ")");
         System.out.println("Literal Type: " + literal.getType());
 
-        // Ensure this is date(column) = DATE '...'
+        // Ensure the function has exactly one argument
         if (function.getArguments().size() != 1) {
             System.out.println("Function has unexpected number of arguments.");
             return Optional.empty();
@@ -144,20 +142,20 @@ public class UnwrapDateFunctionInPredicate
 
         RowExpression column = function.getArguments().get(0);
 
-        // Unwrap CAST if present on the column
+        // Unwrap CAST if present on the column side
         if (column instanceof CallExpression) {
             CallExpression castExpression = (CallExpression) column;
             if (castExpression.getDisplayName().equalsIgnoreCase("CAST") && castExpression.getArguments().size() == 1) {
-                column = castExpression.getArguments().get(0); // Extract the original column
+                column = castExpression.getArguments().get(0);
             }
         }
 
-        // Ensure column is a valid reference
+        // Check that the column is a valid reference
         if (!(column instanceof VariableReferenceExpression || column instanceof InputReferenceExpression)) {
             return Optional.empty();
         }
 
-        // Handle case where literal is VARCHAR (represented internally as io.airlift.slice.Slice) instead of DATE
+        // If the literal is of type VARCHAR (io.airlift.slice.Slice), try to parse it as a date string.
         if (literal.getType().getJavaType().equals(Slice.class)) {
             try {
                 Slice slice = (Slice) literal.getValue();
@@ -171,7 +169,7 @@ public class UnwrapDateFunctionInPredicate
             }
         }
 
-        // Ensure that literal is now a DateType
+        // At this point the literal must be a DateType
         if (!(literal.getType() instanceof DateType)) {
             System.out.println("Literal type is still not DateType, exiting.");
             return Optional.empty();
@@ -188,13 +186,11 @@ public class UnwrapDateFunctionInPredicate
             return Optional.empty();
         }
 
-        // Compute the timestamp range in microseconds.
-        // Presto TIMESTAMP literals are represented as microseconds since the Unix epoch.
+        // Presto TIMESTAMP literals are stored as microseconds since the Unix epoch.
         final long MICROSECONDS_PER_DAY = 86400000000L;
         long lowerBoundMicros = dateDays * MICROSECONDS_PER_DAY;
         long upperBoundMicros = (dateDays + 1) * MICROSECONDS_PER_DAY;
 
-        // Create timestamp literals for comparison
         ConstantExpression lowerTimestampLiteral = new ConstantExpression(lowerBoundMicros, TimestampType.TIMESTAMP);
         ConstantExpression upperTimestampLiteral = new ConstantExpression(upperBoundMicros, TimestampType.TIMESTAMP);
 
@@ -206,7 +202,7 @@ public class UnwrapDateFunctionInPredicate
             ConstantExpression lowerLiteral,
             ConstantExpression upperLiteral)
     {
-        // Create comparisons: column >= lowerBound AND column < upperBound
+        // Build the comparisons: column >= lowerBound AND column < upperBound
         CallExpression lowerBoundComparison = new CallExpression(
                 column.getSourceLocation(),
                 "GREATER_THAN_OR_EQUAL",
@@ -221,7 +217,6 @@ public class UnwrapDateFunctionInPredicate
                 BOOLEAN,
                 ImmutableList.of(column, upperLiteral));
 
-        // Combine the two comparisons with an AND
         return new SpecialFormExpression(
                 column.getSourceLocation(),
                 AND,
@@ -231,7 +226,7 @@ public class UnwrapDateFunctionInPredicate
 
     /**
      * Parses a date string in the format "yyyy-MM-dd" and returns the epoch day.
-     * The epoch day is the number of days since 1970-01-01.
+     * (Epoch day = number of days since 1970-01-01)
      */
     private long parseEpochDay(String dateString)
     {
@@ -243,11 +238,7 @@ public class UnwrapDateFunctionInPredicate
         int month = Integer.parseInt(parts[1]);
         int day = Integer.parseInt(parts[2]);
 
-        // Convert the date to Julian Day using the algorithm:
-        // a = (14 - month) / 12
-        // y = year + 4800 - a
-        // m = month + 12 * a - 3
-        // julianDay = day + (153*m + 2)/5 + 365*y + y/4 - y/100 + y/400 - 32045
+        // Convert the date to Julian Day:
         int a = (14 - month) / 12;
         int y = year + 4800 - a;
         int m = month + 12 * a - 3;
