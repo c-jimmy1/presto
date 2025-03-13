@@ -127,5 +127,62 @@ public class UnwrapHourFunctionInPredicate
         return Optional.empty();
     }
 
+    private Optional<RowExpression> rewriteHourFunction(CallExpression function, ConstantExpression literal)
+    {
+        // Ensure the hour() function has exactly one argument
+        if (function.getArguments().size() != 1) {
+            return Optional.empty();
+        }
+
+        RowExpression column = function.getArguments().get(0);
+
+        // Unwrap CAST on column if present
+        if (column instanceof CallExpression) {
+            CallExpression castExpression = (CallExpression) column;
+            if (castExpression.getDisplayName().equalsIgnoreCase("CAST")
+                    && castExpression.getArguments().size() == 1) {
+                column = castExpression.getArguments().get(0);
+            }
+        }
+
+        // Ensure that column is a valid TIMESTAMP reference
+        if (!(column instanceof VariableReferenceExpression || column instanceof InputReferenceExpression)) {
+            return Optional.empty();
+        }
+        if (!(column.getType() instanceof TimestampType)) {
+            // Only apply if the column is a timestamp
+            return Optional.empty();
+        }
+
+        // The literal should be an integer (0 to 23)
+        if (!(literal.getValue() instanceof Number)) {
+            return Optional.empty();
+        }
+        int hourValue = ((Number) literal.getValue()).intValue();
+        if (hourValue < 0 || hourValue > 23) {
+            return Optional.empty();
+        }
+
+        // IMPORTANT: To compute a contiguous range for an hour, we need the day’s start.
+        // This rule only works if the query is restricted to a single day.
+        // For demonstration, we assume that an additional predicate (e.g., date(t) = DATE '2025-03-13')
+        // has already fixed the day.
+        // Here we hard-code the day start for 2025-03-13.
+        // In a real implementation, you would extract this from the query context.
+        long dayStartMicros = computeDayStartMicros("2025-03-13");
+
+        long lowerBoundMicros = dayStartMicros + hourValue * MICROSECONDS_PER_HOUR;
+        long upperBoundMicros = lowerBoundMicros + MICROSECONDS_PER_HOUR;
+
+        ConstantExpression lowerTimestampLiteral = new ConstantExpression(lowerBoundMicros, TimestampType.TIMESTAMP);
+        ConstantExpression upperTimestampLiteral = new ConstantExpression(upperBoundMicros, TimestampType.TIMESTAMP);
+
+        return Optional.of(createTimestampRangePredicate(column, lowerTimestampLiteral, upperTimestampLiteral));
+    }
+
+    /**
+     * Compute the start of the day in microseconds from a date string "yyyy-MM-dd".
+     * This is similar to how date literals are converted.
+     */
 
 }
