@@ -184,5 +184,52 @@ public class UnwrapHourFunctionInPredicate
      * Compute the start of the day in microseconds from a date string "yyyy-MM-dd".
      * This is similar to how date literals are converted.
      */
+    private long computeDayStartMicros(String dateString)
+    {
+        // Parse the date string into year, month, day
+        String[] parts = dateString.split("-");
+        if (parts.length != 3) {
+            throw new IllegalArgumentException("Invalid date format: " + dateString);
+        }
+        int year = Integer.parseInt(parts[0]);
+        int month = Integer.parseInt(parts[1]);
+        int day = Integer.parseInt(parts[2]);
 
+        // Compute the epoch day (number of days since 1970-01-01)
+        // (Using a similar approach as in the date rule.)
+        int a = (14 - month) / 12;
+        int y = year + 4800 - a;
+        int m = month + 12 * a - 3;
+        int julianDay = day + (153 * m + 2) / 5 + 365 * y + y / 4 - y / 100 + y / 400 - 32045;
+        long epochDay = julianDay - 2440588;
+        // Convert days to microseconds (1 day = 86,400,000,000 microseconds)
+        final long MICROSECONDS_PER_DAY = 86400000000L;
+        return epochDay * MICROSECONDS_PER_DAY;
+    }
+
+    private RowExpression createTimestampRangePredicate(
+            RowExpression column,
+            ConstantExpression lowerLiteral,
+            ConstantExpression upperLiteral)
+    {
+        CallExpression lowerBoundComparison = new CallExpression(
+                column.getSourceLocation(),
+                "GREATER_THAN_OR_EQUAL",
+                functionResolution.comparisonFunction(OperatorType.GREATER_THAN_OR_EQUAL, column.getType(), lowerLiteral.getType()),
+                BOOLEAN,
+                ImmutableList.of(column, lowerLiteral));
+
+        CallExpression upperBoundComparison = new CallExpression(
+                column.getSourceLocation(),
+                "LESS_THAN",
+                functionResolution.comparisonFunction(OperatorType.LESS_THAN, column.getType(), upperLiteral.getType()),
+                BOOLEAN,
+                ImmutableList.of(column, upperLiteral));
+
+        return new SpecialFormExpression(
+                column.getSourceLocation(),
+                AND,
+                BOOLEAN,
+                ImmutableList.of(lowerBoundComparison, upperBoundComparison));
+    }
 }
