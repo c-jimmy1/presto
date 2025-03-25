@@ -250,6 +250,10 @@ SystemConfig::SystemConfig() {
           BOOL_PROP(kPlanValidatorFailOnNestedLoopJoin, false),
           STR_PROP(kPrestoDefaultNamespacePrefix, "presto.default"),
           STR_PROP(kPoolType, "DEFAULT"),
+          BOOL_PROP(kSpillEnabled, false),
+          BOOL_PROP(kJoinSpillEnabled, true),
+          BOOL_PROP(kAggregationSpillEnabled, true),
+          BOOL_PROP(kOrderBySpillEnabled, true),
       };
 }
 
@@ -311,6 +315,22 @@ std::string SystemConfig::poolType() const {
       "{} must be one of 'LEAF', 'INTERMEDIATE', or 'DEFAULT'",
       kPoolType);
   return value;
+}
+
+bool SystemConfig::spillEnabled() const {
+  return optionalProperty<bool>(kSpillEnabled).value();
+}
+
+bool SystemConfig::joinSpillEnabled() const {
+  return optionalProperty<bool>(kJoinSpillEnabled).value();
+}
+
+bool SystemConfig::aggregationSpillEnabled() const {
+  return optionalProperty<bool>(kAggregationSpillEnabled).value();
+}
+
+bool SystemConfig::orderBySpillEnabled() const {
+  return optionalProperty<bool>(kOrderBySpillEnabled).value();
 }
 
 bool SystemConfig::mutableConfig() const {
@@ -636,6 +656,63 @@ std::string SystemConfig::sharedArbitratorMemoryPoolMinFreeCapacityPct() const {
              kSharedArbitratorMemoryPoolMinFreeCapacityPct)
       .value_or(
           std::string(kSharedArbitratorMemoryPoolMinFreeCapacityPctDefault));
+}
+
+std::string SystemConfig::sharedArbitratorMemoryPoolAbortCapacityLimit() const {
+  static constexpr std::string_view
+      kSharedArbitratorMemoryPoolAbortCapacityLimitDefault = "1GB";
+  return optionalProperty<std::string>(
+             kSharedArbitratorMemoryPoolAbortCapacityLimit)
+      .value_or(
+          std::string(kSharedArbitratorMemoryPoolAbortCapacityLimitDefault));
+}
+
+std::string SystemConfig::sharedArbitratorMemoryPoolMinReclaimBytes() const {
+  static constexpr std::string_view
+      kSharedArbitratorMemoryPoolMinReclaimBytesDefault = "128MB";
+  return optionalProperty<std::string>(
+             kSharedArbitratorMemoryPoolMinReclaimBytes)
+      .value_or(std::string(kSharedArbitratorMemoryPoolMinReclaimBytesDefault));
+}
+
+std::string SystemConfig::sharedArbitratorMemoryReclaimThreadsHwMultiplier()
+    const {
+  static constexpr std::string_view
+      kSharedArbitratorMemoryReclaimThreadsHwMultiplierDefault = "0.5";
+  return optionalProperty<std::string>(
+             kSharedArbitratorMemoryReclaimThreadsHwMultiplier)
+      .value_or(std::string(
+          kSharedArbitratorMemoryReclaimThreadsHwMultiplierDefault));
+}
+
+std::string SystemConfig::sharedArbitratorGlobalArbitrationMemoryReclaimPct()
+    const {
+  static constexpr std::string_view
+      kSharedArbitratorGlobalArbitrationMemoryReclaimPctDefault = "10";
+  return optionalProperty<std::string>(
+             kSharedArbitratorGlobalArbitrationMemoryReclaimPct)
+      .value_or(std::string(
+          kSharedArbitratorGlobalArbitrationMemoryReclaimPctDefault));
+}
+
+std::string SystemConfig::sharedArbitratorGlobalArbitrationAbortTimeRatio()
+    const {
+  static constexpr std::string_view
+      kSharedArbitratorGlobalArbitrationAbortTimeRatioDefault = "0.5";
+  return optionalProperty<std::string>(
+             kSharedArbitratorGlobalArbitrationAbortTimeRatio)
+      .value_or(
+          std::string(kSharedArbitratorGlobalArbitrationAbortTimeRatioDefault));
+}
+
+std::string SystemConfig::sharedArbitratorGlobalArbitrationWithoutSpill()
+    const {
+  static constexpr std::string_view
+      kSharedArbitratorGlobalArbitrationWithoutSpillDefault = "false";
+  return optionalProperty<std::string>(
+             kSharedArbitratorGlobalArbitrationWithoutSpill)
+      .value_or(
+          std::string(kSharedArbitratorGlobalArbitrationWithoutSpillDefault));
 }
 
 bool SystemConfig::enableSystemMemoryPoolUsageTracking() const {

@@ -2,7 +2,7 @@
 Presto C++ Configuration Properties
 ===================================
 
-This section describes Presto C++ configuration properties.
+This section describes Presto C++ configuration properties. 
 
 The following is not a complete list of all configuration properties,
 and does not include any connector-specific catalog configuration properties
@@ -12,8 +12,8 @@ For information on catalog configuration properties, see :doc:`Connectors </conn
 
 For information on Presto C++ session properties, see :doc:`properties-session`.
 
-NOTE: While some of the configuration properties below with "-gb" in their names 
-show gigabytes (gB; 1 gB equals 1000000000 B), it is actually 
+NOTE: While some of the configuration properties below with "-gb" in their names
+show gigabytes (gB; 1 gB equals 1000000000 B), it is actually
 gibibytes (GiB; 1 GiB equals 1073741824 B).
 
 .. contents::
@@ -137,8 +137,8 @@ The configuration properties of Presto C++ workers are described here, in alphab
   1) Memory used by the queries as specified in ``query-memory-gb``; 2) Memory used by the
   system, such as disk spilling and cache prefetch.
 
-  Set ``system-memory-gb`` to about 90% of available machine memory of the deployment. 
-  This allows some buffer room to handle unaccounted memory in order to prevent out-of-memory conditions. 
+  Set ``system-memory-gb`` to about 90% of available machine memory of the deployment.
+  This allows some buffer room to handle unaccounted memory in order to prevent out-of-memory conditions.
   The default value of 57 gb is calculated based on available machine memory of 64 gb.
 
 
@@ -161,6 +161,51 @@ The configuration properties of Presto C++ workers are described here, in alphab
   Specifies the max spill bytes limit set for each query. This is used to cap the
   storage used for spilling. If it is zero, then there is no limit and spilling
   might exhaust the storage or takes too long to run.
+
+
+``spill-enabled``
+^^^^^^^^^^^^^^^^^
+
+* **Type:** ``boolean``
+* **Default value:** ``false``
+
+Try spilling memory to disk to avoid exceeding memory limits for the query.
+
+Spilling works by offloading memory to disk. This process can allow a query with a large memory
+footprint to pass at the cost of slower execution times. Currently, spilling is supported only for
+aggregations and joins (inner and outer), so this property will not reduce memory usage required for
+window functions, sorting and other join types.
+
+
+``join-spill-enabled``
+^^^^^^^^^^^^^^^^^^^^^^
+
+* **Type:** ``boolean``
+* **Default value:** ``true``
+
+When ``spill_enabled`` is ``true``, this determines whether Presto will try spilling memory to disk for joins to
+avoid exceeding memory limits for the query.
+
+
+``aggregation-spill-enabled``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* **Type:** ``boolean``
+* **Default value:** ``true``
+
+When ``spill_enabled`` is ``true``, this determines whether Presto will try spilling memory to disk for aggregations to
+avoid exceeding memory limits for the query.
+
+
+``order-by-spill-enabled``
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* **Type:** ``boolean``
+* **Default value:** ``true``
+
+When ``spill_enabled`` is ``true``, this determines whether Presto will try spilling memory to disk for order by to
+avoid exceeding memory limits for the query.
+
 
 ``shared-arbitrator.reserved-capacity``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -288,6 +333,75 @@ The configuration properties of Presto C++ workers are described here, in alphab
 
   See description for ``shared-arbitrator.memory-pool-min-free-capacity``
 
+``shared-arbitrator.memory-pool-abort-capacity-limit``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* **Type:** ``string``
+* **Default value:** ``1GB``
+
+  Specifies the starting memory capacity limit for global arbitration to
+  search for victim participant to reclaim used memory by abort. For
+  participants with capacity larger than the limit, the global arbitration
+  chooses to abort the youngest participant which has the largest
+  participant id. This helps to let the old queries to run to completion.
+  The abort capacity limit is reduced by half if could not find a victim
+  participant until this reaches to zero.
+
+  NOTE: the limit value must be either zero, or a power of 2.
+
+``shared-arbitrator.memory-pool-min-reclaim-bytes``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* **Type:** ``string``
+* **Default value:** ``128MB``
+
+  Specifies the minimum bytes to reclaim from a participant at a time. The
+  global arbitration also avoids reclaiming from a participant if its
+  reclaimable used capacity is less than this threshold. This is to
+  prevent inefficient memory reclaim operations on a participant with
+  small reclaimable used capacity, which could cause a large number of
+  small spilled files on disk.
+
+``shared-arbitrator.memory-reclaim-threads-hw-multiplier``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* **Type:** ``string``
+* **Default value:** ``0.5``
+
+  Floating point number used in calculating how many threads to use
+  for memory reclaim execution: hw_concurrency x multiplier. 0.5 is
+  default.
+
+``shared-arbitrator.global-arbitration-memory-reclaim-pct``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* **Type:** ``string``
+* **Default value:** ``10``
+
+  If not zero, specifies the minimum amount of memory to reclaim by global
+  memory arbitration as percentage of total arbitrator memory capacity.
+
+``shared-arbitrator.global-arbitration-abort-time-ratio``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* **Type:** ``string``
+* **Default value:** ``0.5``
+
+  The ratio used with ``shared-arbitrator.memory-reclaim-max-wait-time``,
+  beyond which global arbitration will no longer reclaim memory by
+  spilling, but instead directly abort. It is only in effect when
+  ``global-arbitration-enabled`` is ``true``.
+
+``shared-arbitrator.global-arbitration-without-spill``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* **Type:** ``string``
+* **Default value:** ``false``
+
+  If ``true``, global arbitration does not reclaim memory by spilling, but
+  only by aborting. This flag is only effective if
+  ``shared-arbitrator.global-arbitration-enabled`` is ``true``.
+
 Cache Properties
 ----------------
 
@@ -310,43 +424,43 @@ The configuration properties of AsyncDataCache and SSD cache are described here.
   In-memory cache.
 
 ``async-cache-ssd-gb``
-^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^
 
 * **Type:** ``integer``
 * **Default value:** ``0``
 
-  The size of the SSD. Unit is in GiB (gibibytes).
+  The size of the SSD. Unit is in GiB (gibibytes). 
 
 ``async-cache-ssd-path``
 ^^^^^^^^^^^^^^^^^^^^^^^^
 * **Type:** ``string``
 * **Default value:** ``/mnt/flash/async_cache.``
-  
+
   The path of the directory that is mounted onto the SSD.
 
 ``async-cache-max-ssd-write-ratio``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 * **Type:** ``double``
 * **Default value:** ``0.7``
-  
-  The maximum ratio of the number of in-memory cache entries written to the SSD cache 
-  over the total number of cache entries. Use this to control SSD cache write rate, 
+
+  The maximum ratio of the number of in-memory cache entries written to the SSD cache
+  over the total number of cache entries. Use this to control SSD cache write rate,
   once the ratio exceeds this threshold then we stop writing to the SSD cache.
 
 ``async-cache-ssd-savable-ratio``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 * **Type:** ``double``
 * **Default value:** ``0.125``
-  
+
   The min ratio of SSD savable (in-memory) cache space over the total cache space.
-  Once the ratio exceeds this limit, we start writing SSD savable cache entries 
+  Once the ratio exceeds this limit, we start writing SSD savable cache entries
   into SSD cache.
 
 ``async-cache-min-ssd-savable-bytes``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 * **Type:** ``integer``
 * **Default value:** ``16777216``
-  
+
   Min SSD savable (in-memory) cache space to start writing SSD savable cache entries into SSD cache.
 
   The default value ``16777216`` is 16 MB.
@@ -358,19 +472,19 @@ The configuration properties of AsyncDataCache and SSD cache are described here.
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 * **Type:** ``string``
 * **Default value:** ``0s``
-  
+
   The interval for persisting in-memory cache to SSD. Set this configuration to a non-zero value to
   activate periodic cache persistence.
-  
-  The following time units are supported: 
-  
+
+  The following time units are supported:
+
   ns, us, ms, s, m, h, d
 
 ``async-cache-ssd-disable-file-cow``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 * **Type:** ``bool``
 * **Default value:** ``false``
-  
+
   In file systems such as btrfs that support cow (copy on write), the SSD cache can use all of the SSD
   space and stop working. To prevent that, use this option to disable cow for cache files.
 
@@ -378,41 +492,41 @@ The configuration properties of AsyncDataCache and SSD cache are described here.
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 * **Type:** ``bool``
 * **Default value:** ``false``
-  
-  When enabled, a CRC-based checksum is calculated for each cache entry written to SSD. 
+
+  When enabled, a CRC-based checksum is calculated for each cache entry written to SSD.
   The checksum is stored in the next checkpoint file.
 
 ``ssd-cache-read-verification-enabled``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 * **Type:** ``bool``
 * **Default value:** ``false``
-  
-  When enabled, the checksum is recalculated and verified against the stored value when 
+
+  When enabled, the checksum is recalculated and verified against the stored value when
   cache data is loaded from the SSD.
 
 ``cache.velox.ttl-enabled``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 * **Type:** ``bool``
 * **Default value:** ``false``
-  
+
   Enable TTL for AsyncDataCache and SSD cache.
 
 ``cache.velox.ttl-threshold``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 * **Type:** ``string``
 * **Default value:** ``2d``
-  
+
   TTL duration for AsyncDataCache and SSD cache entries.
-  
+
   The following time units are supported:
-  
+
   ns, us, ms, s, m, h, d
 
 ``cache.velox.ttl-check-interval``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 * **Type:** ``string``
 * **Default value:** ``1h``
-  
+
   The periodic duration to apply cache TTL and evict AsyncDataCache and SSD cache entries.
 
 Memory Checker Properties
@@ -439,9 +553,9 @@ server is under low memory pressure.
 
 Specifies the system memory limit that triggers the memory pushback or heap dump if
 the server memory usage is beyond this limit. A value of zero means no limit is set.
-This only applies if ``system-mem-pushback-enabled`` is ``true``. 
-Set ``system-mem-limit-gb`` to be greater than or equal to system-memory-gb but not 
-higher than the available machine memory of the deployment. 
+This only applies if ``system-mem-pushback-enabled`` is ``true``.
+Set ``system-mem-limit-gb`` to be greater than or equal to system-memory-gb but not
+higher than the available machine memory of the deployment.
 The default value of 60 gb is calculated based on available machine memory of 64 gb.
 
 ``system-mem-shrink-gb``
