@@ -148,6 +148,7 @@ import com.facebook.presto.sql.planner.iterative.rule.TransformExistsApplyToLate
 import com.facebook.presto.sql.planner.iterative.rule.TransformUncorrelatedInPredicateSubqueryToDistinctInnerJoin;
 import com.facebook.presto.sql.planner.iterative.rule.TransformUncorrelatedInPredicateSubqueryToSemiJoin;
 import com.facebook.presto.sql.planner.iterative.rule.TransformUncorrelatedLateralToJoin;
+import com.facebook.presto.sql.planner.iterative.rule.UnwrapDateFunctionInPredicate;
 import com.facebook.presto.sql.planner.optimizations.AddExchanges;
 import com.facebook.presto.sql.planner.optimizations.AddExchangesForSingleNodeExecution;
 import com.facebook.presto.sql.planner.optimizations.AddLocalExchanges;
@@ -423,6 +424,7 @@ public class PlanOptimizers
                                         new MergeLimitWithDistinct(),
                                         new PruneCountAggregationOverScalar(metadata.getFunctionAndTypeManager()),
                                         new PruneOrderByInAggregation(metadata.getFunctionAndTypeManager()),
+                                        new UnwrapDateFunctionInPredicate(metadata.getFunctionAndTypeManager()),
                                         new RewriteSpatialPartitioningAggregation(metadata)))
                                 .build()),
                 new IterativeOptimizer(
@@ -432,7 +434,9 @@ public class PlanOptimizers
                         estimatedExchangesCostCalculator,
                         ImmutableSet.of(
                                 new ImplementBernoulliSampleAsFilter(metadata.getFunctionAndTypeManager()),
-                                new ImplementOffset(metadata.getFunctionAndTypeManager()))),
+                                new UnwrapDateFunctionInPredicate(metadata.getFunctionAndTypeManager()),
+
+        new ImplementOffset(metadata.getFunctionAndTypeManager()))),
                 simplifyRowExpressionOptimizer,
                 new IterativeOptimizer(
                         metadata,
