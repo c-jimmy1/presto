@@ -19,6 +19,8 @@ import com.facebook.presto.common.function.OperatorType;
 import com.google.common.collect.ImmutableList;
 import io.airlift.slice.Slice;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.Optional;
 
 import static com.facebook.presto.matching.Pattern.typeOf;
@@ -107,7 +109,7 @@ public class UnwrapDateFunctionInPredicate
         // Unwrap CAST if present on the literal side
         if (literalSide instanceof CallExpression) {
             CallExpression castExpression = (CallExpression) literalSide;
-            if (castExpression.getDisplayName().equalsIgnoreCase("CAST") && castExpression.getArguments().size() == 1) {
+            if (castExpression.getDisplayName().equalsIgnoreCase(OperatorType.CAST.getFunctionName().toString()) && castExpression.getArguments().size() == 1) {
                 literalSide = castExpression.getArguments().get(0); // Extract the inner literal
             }
         }
@@ -160,7 +162,8 @@ public class UnwrapDateFunctionInPredicate
             try {
                 Slice slice = (Slice) literal.getValue();
                 String dateString = slice.toStringUtf8();
-                long epochDay = parseEpochDay(dateString);
+                LocalDate date = LocalDate.parse(dateString, DateTimeFormatter.ISO_LOCAL_DATE);
+                long epochDay = date.toEpochDay();
                 literal = new ConstantExpression(epochDay, DateType.DATE);
                 System.out.println("Converted VARCHAR literal to DateType using epochDay: " + epochDay);
             } catch (Exception e) {
@@ -222,28 +225,5 @@ public class UnwrapDateFunctionInPredicate
                 AND,
                 BOOLEAN,
                 ImmutableList.of(lowerBoundComparison, upperBoundComparison));
-    }
-
-    /**
-     * Parses a date string in the format "yyyy-MM-dd" and returns the epoch day.
-     * (Epoch day = number of days since 1970-01-01)
-     */
-    private long parseEpochDay(String dateString)
-    {
-        String[] parts = dateString.split("-");
-        if (parts.length != 3) {
-            throw new IllegalArgumentException("Invalid date format: " + dateString);
-        }
-        int year = Integer.parseInt(parts[0]);
-        int month = Integer.parseInt(parts[1]);
-        int day = Integer.parseInt(parts[2]);
-
-        // Convert the date to Julian Day:
-        int a = (14 - month) / 12;
-        int y = year + 4800 - a;
-        int m = month + 12 * a - 3;
-        int julianDay = day + (153 * m + 2) / 5 + 365 * y + y / 4 - y / 100 + y / 400 - 32045;
-        // Unix epoch (1970-01-01) corresponds to Julian Day 2440588
-        return julianDay - 2440588;
     }
 }
