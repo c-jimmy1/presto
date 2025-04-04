@@ -434,7 +434,6 @@ public class PlanOptimizers
                         estimatedExchangesCostCalculator,
                         ImmutableSet.of(
                                 new ImplementBernoulliSampleAsFilter(metadata.getFunctionAndTypeManager()),
-                                new UnwrapDateFunctionInPredicate(metadata.getFunctionAndTypeManager()),
 
         new ImplementOffset(metadata.getFunctionAndTypeManager()))),
                 simplifyRowExpressionOptimizer,
