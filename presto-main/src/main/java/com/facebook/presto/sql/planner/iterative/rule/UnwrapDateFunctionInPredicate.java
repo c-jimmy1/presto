@@ -126,19 +126,19 @@ public class UnwrapDateFunctionInPredicate
         }
 
         // try to interpret the literal side as a DATE expression
-        RowExpression maybeDateLiteral = unwrapDateLiteralIfConstant(literalSide);
-        if (maybeDateLiteral == null) {
+        RowExpression DateLiteral = unwrapDateLiteralIfConstant(literalSide);
+        if (DateLiteral == null) {
             return Optional.empty();
         }
-        if (!(maybeDateLiteral.getType() instanceof DateType)) {
+        if (!(DateLiteral.getType() instanceof DateType)) {
             return Optional.empty();
         }
 
-        if (!(maybeDateLiteral instanceof ConstantExpression)) {
+        if (!(DateLiteral instanceof ConstantExpression)) {
             // not fully folded to a constant? bail for simplicity
             return Optional.empty();
         }
-        ConstantExpression dateConstant = (ConstantExpression) maybeDateLiteral;
+        ConstantExpression dateConstant = (ConstantExpression) DateLiteral;
 
         // rewrite date(timestamp_col) = DATE 'xxx' into the TS range
         return rewriteDateFunction(timestampExpr, dateConstant);
