@@ -5,6 +5,7 @@ import com.facebook.presto.common.type.IntegerType;
 import com.facebook.presto.common.type.TimestampType;
 import com.facebook.presto.matching.Captures;
 import com.facebook.presto.matching.Pattern;
+import com.facebook.presto.metadata.CastType;
 import com.facebook.presto.metadata.FunctionAndTypeManager;
 import com.facebook.presto.spi.function.FunctionHandle;
 import com.facebook.presto.spi.function.StandardFunctionResolution;
@@ -124,6 +125,65 @@ public class UnwrapYearFunctionInPredicate
             return null; // Not an integer
         }
         return null; // Not a constant
+    }
+
+    private Optional<RowExpression> rewriteYearFunction(RowExpression timestampExpr, ConstantExpression yearLiteral)
+    {
+        int year = (Integer) yearLiteral.getValue();
+
+        // Build two timestamp constants: yearStart and yearEnd
+        ConstantExpression lowerTimestamp = new ConstantExpression(yearLiteral.getSourceLocation(), year, TimestampType.TIMESTAMP);
+        ConstantExpression upperTimestamp = new ConstantExpression(yearLiteral.getSourceLocation(), year + 1, TimestampType.TIMESTAMP);
+
+        // Cast them to timestamp
+        CallExpression lowerTs = buildYearToTimestampCast(lowerTimestamp);
+        CallExpression upperTs = buildYearToTimestampCast(upperTimestamp);
+
+        // timestamp >= lowerTs
+        RowExpression lowerBound = new CallExpression(
+                timestampExpr.getSourceLocation(),
+                OperatorType.GREATER_THAN_OR_EQUAL.name(),
+                functionResolution.comparisonFunction(
+                        OperatorType.GREATER_THAN_OR_EQUAL,
+                        timestampExpr.getType(),
+                        lowerTs.getType()),
+                BOOLEAN,
+                ImmutableList.of(timestampExpr, lowerTs));
+
+        // timestamp < upperTs
+        RowExpression upperBound = new CallExpression(
+                timestampExpr.getSourceLocation(),
+                OperatorType.LESS_THAN.name(),
+                functionResolution.comparisonFunction(
+                        OperatorType.LESS_THAN,
+                        timestampExpr.getType(),
+                        upperTs.getType()),
+                BOOLEAN,
+                ImmutableList.of(timestampExpr, upperTs));
+
+        // Combine with AND
+        SpecialFormExpression finalPredicate = new SpecialFormExpression(
+                timestampExpr.getSourceLocation(),
+                AND,
+                BOOLEAN,
+                ImmutableList.of(lowerBound, upperBound));
+
+        return Optional.of(finalPredicate);
+    }
+
+    private CallExpression buildYearToTimestampCast(ConstantExpression yearConstant)
+    {
+        FunctionHandle castHandle = functionAndTypeManager.lookupCast(
+                CastType.CAST,
+                yearConstant.getType(),
+                TimestampType.TIMESTAMP);
+
+        return new CallExpression(
+                yearConstant.getSourceLocation(),
+                OperatorType.CAST.name(),
+                castHandle,
+                TimestampType.TIMESTAMP,
+                ImmutableList.of(yearConstant));
     }
 
 
