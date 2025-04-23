@@ -54,13 +54,95 @@ public class UnwrapYearFunctionInPredicate
         }
         CallExpression call = (CallExpression) predicate;
 
-        // Check it's a year function call
-        if (!YEAR_FUNCTION.equalsIgnoreCase(call.getDisplayName())) {
+        // Check it's an equality call for the year function
+        if (!functionResolution.isEqualsFunction(call.getFunctionHandle())) {
             return Result.empty();
         }
 
-        // Logic will go here in the next phases
+        // Unwrap redundant casts for the left and right side of the predicate
+        RowExpression left = unwrapCasts(call.getArguments().get(0));
+        RowExpression right = unwrapCasts(call.getArguments().get(1));
 
-        return Result.empty();
+        // Try rewriting year(...) = integer-literal
+        Optional<RowExpression> rewritten = tryRewriteYearFunctionEqualsLiteral(left, right);
+        if (!rewritten.isPresent()) {
+            // or integer-literal = year(...)
+            rewritten = tryRewriteYearFunctionEqualsLiteral(right, left);
+        }
+
+        return rewritten.map(rowExpression -> Result.ofPlanNode(
+                new FilterNode(
+                        node.getSourceLocation(),
+                        node.getId(),
+                        node.getSource(),
+                        rowExpression))).orElseGet(Result::empty);
+    }
+
+    private Optional<RowExpression> tryRewriteYearFunctionEqualsLiteral(RowExpression functionSide, RowExpression literalSide)
+    {
+        if (!(functionSide instanceof CallExpression)) {
+            return Optional.empty();
+        }
+        CallExpression yearCall = (CallExpression) functionSide;
+
+        // Must be year(...)
+        if (!YEAR_FUNCTION.equalsIgnoreCase(yearCall.getDisplayName())) {
+            return Optional.empty();
+        }
+        if (yearCall.getArguments().size() != 1) {
+            return Optional.empty();
+        }
+
+        // The argument to year() must be a TIMESTAMP
+        RowExpression timestampExpr = unwrapCasts(yearCall.getArguments().get(0));
+        if (!(timestampExpr.getType() instanceof TimestampType)) {
+            return Optional.empty();
+        }
+
+        // Try to interpret the literal side as an integer
+        RowExpression integerLiteral = unwrapIntegerLiteralIfConstant(literalSide);
+        if (integerLiteral == null) {
+            return Optional.empty();
+        }
+
+        if (!(integerLiteral instanceof ConstantExpression)) {
+            return Optional.empty();
+        }
+        ConstantExpression integerConstant = (ConstantExpression) integerLiteral;
+
+        // Rewrite year(timestamp_col) = INTEGER into a range check
+        return rewriteYearFunction(timestampExpr, integerConstant);
+    }
+
+    private RowExpression unwrapIntegerLiteralIfConstant(RowExpression expression)
+    {
+        if (expression instanceof ConstantExpression) {
+            ConstantExpression constant = (ConstantExpression) expression;
+            if (constant.getType() instanceof IntegerType) {
+                return constant;
+            }
+            return null; // Not an integer
+        }
+        return null; // Not a constant
+    }
+
+
+
+    private RowExpression unwrapCasts(RowExpression childExpression)
+    {
+        while (childExpression instanceof CallExpression) {
+            CallExpression call = (CallExpression) childExpression;
+            if (functionResolution.isCastFunction(call.getFunctionHandle())
+                    && call.getArguments().size() == 1) {
+                // only remove if the cast input type == cast output type
+                RowExpression grandchild = call.getArguments().get(0);
+                if (call.getType().equals(grandchild.getType())) {
+                    childExpression = grandchild;
+                    continue;
+                }
+            }
+            break;
+        }
+        return childExpression;
     }
 }
