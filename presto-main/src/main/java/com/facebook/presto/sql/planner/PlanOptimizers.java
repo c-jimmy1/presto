@@ -150,6 +150,7 @@ import com.facebook.presto.sql.planner.iterative.rule.TransformUncorrelatedInPre
 import com.facebook.presto.sql.planner.iterative.rule.TransformUncorrelatedLateralToJoin;
 import com.facebook.presto.sql.planner.iterative.rule.UnwrapDateFunctionInPredicate;
 import com.facebook.presto.sql.planner.iterative.rule.UnwrapHourFunctionInPredicate;
+import com.facebook.presto.sql.planner.iterative.rule.UnwrapYearFunctionInPredicate;
 import com.facebook.presto.sql.planner.optimizations.AddExchanges;
 import com.facebook.presto.sql.planner.optimizations.AddExchangesForSingleNodeExecution;
 import com.facebook.presto.sql.planner.optimizations.AddLocalExchanges;
@@ -427,6 +428,7 @@ public class PlanOptimizers
                                         new PruneOrderByInAggregation(metadata.getFunctionAndTypeManager()),
                                         new UnwrapDateFunctionInPredicate(metadata.getFunctionAndTypeManager()),
                                         new UnwrapHourFunctionInPredicate(metadata.getFunctionAndTypeManager()),
+                                        new UnwrapYearFunctionInPredicate(metadata.getFunctionAndTypeManager()),
                                         new RewriteSpatialPartitioningAggregation(metadata)))
                                 .build()),
                 new IterativeOptimizer(
